@@ -8,6 +8,64 @@ import numpy as np
 from utils.utils import validate_dataframe
 
 
+class EmbeddingDatasetCoxRegression(Dataset):
+    """
+    Serves embeddings from .pt files
+    emb_file_paths: List[str] = list of paths to pt files
+    case_ids: List[str] = list of case ids
+    scores: List[float] = list of scores
+    """
+
+    def __init__(
+        self,
+        df,
+    ) -> None:
+        self.df = df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, index: int):
+        row = self.df.iloc[index]
+        return {
+            "x": torch.load(row["input_visual_embedding_path"]).float(),
+            "tte": torch.tensor(row["tte"]).float(),
+            "censor": torch.tensor(row['censor']).int(),
+            "case_id": row["case_id"],
+            "output_visual_embedding_path": row["output_visual_embedding_path"],
+            "split": row["split"],
+        }
+    
+
+
+class EmbeddingDatasetLogisticRegression(Dataset):
+    """
+    Serves embeddings from .pt files
+    emb_file_paths: List[str] = list of paths to pt files
+    case_ids: List[str] = list of case ids
+    scores: List[float] = list of scores
+    """
+
+    def __init__(
+        self,
+        df,
+    ) -> None:
+        self.df = df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, index: int):
+        row = self.df.iloc[index]
+        return {
+            "x": torch.load(row["input_visual_embedding_path"]).float(),
+            "y": torch.tensor(row["class"]).int(),
+            "case_id": row["case_id"],
+            "output_visual_embedding_path": row["output_visual_embedding_path"],
+            "split": row["split"],
+        }
+    
+
 class EmbeddingDataset(Dataset):
     """
     Serves embeddings from .pt files
@@ -35,6 +93,7 @@ class EmbeddingDataset(Dataset):
             "split": row["split"],
         }
     
+
 
 class EmbeddingDataModule(pl.LightningDataModule):
     def __init__(
