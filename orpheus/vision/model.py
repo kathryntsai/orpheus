@@ -53,7 +53,7 @@ class TileTransformer(pl.LightningModule):
         self.reg_head = nn.Sequential(nn.LayerNorm(self.latent_dim),
                                nn.Linear(self.latent_dim, 1))
 
-        # self.pos_weight = Tensor(nn.compute_class_weight)
+        #self.pos_weight = Tensor(nn.compute_class_weight)
                                  
         setattr(self, "train_concordance", ConcordanceCorrCoef())
         setattr(self, "train_pearson", PearsonCorrCoef())
