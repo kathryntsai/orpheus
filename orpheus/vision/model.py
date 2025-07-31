@@ -53,6 +53,8 @@ class TileTransformer(pl.LightningModule):
         self.reg_head = nn.Sequential(nn.LayerNorm(self.latent_dim),
                                nn.Linear(self.latent_dim, 1))
 
+        # self.pos_weight = Tensor(nn.compute_class_weight)
+                                 
         setattr(self, "train_concordance", ConcordanceCorrCoef())
         setattr(self, "train_pearson", PearsonCorrCoef())
         setattr(self, "train_mse", MeanSquaredError())
@@ -77,7 +79,7 @@ class TileTransformer(pl.LightningModule):
     
     @staticmethod
     def calculate_loss(y_hat, y):
-        return nn.functional.mse_loss(y_hat, y, reduction="mean")
+        return nn.functional.binary_cross_entropy_with_logits(y_hat, y, reduction="mean")
 
     def validation_step(self, batch, batch_idx):
         y_hat = self.forward(batch['x'])['y_hat']
