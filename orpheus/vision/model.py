@@ -53,7 +53,8 @@ class TileTransformer(pl.LightningModule):
         self.reg_head = nn.Sequential(nn.LayerNorm(self.latent_dim),
                                nn.Linear(self.latent_dim, 1))
 
-        #self.pos_weight = Tensor(nn.compute_class_weight)
+        # Will be set in setup()
+        self.pos_weight = None        
                                  
         setattr(self, "train_concordance", ConcordanceCorrCoef())
         setattr(self, "train_pearson", PearsonCorrCoef())
@@ -63,6 +64,66 @@ class TileTransformer(pl.LightningModule):
         setattr(self, "val_mse", MeanSquaredError())
 
 
+    def setup(self, stage: str):
+        """Compute pos_weight = (#neg / #pos) from the training split once we have the datamodule."""
+        if self.pos_weight is not None:
+            return
+
+        dm = getattr(self.trainer, "datamodule", None)
+        if dm is None:
+            return  # nothing we can do
+
+        pos = 0
+        neg = 0
+
+        # Try to grab labels from a training dataset dataframe if exposed
+        y_iterable = None
+        for cand in ["train_dataset", "dataset_train", "train_set"]:
+            if hasattr(dm, cand):
+                ds = getattr(dm, cand)
+                # Try common patterns for labels
+                if hasattr(ds, "df") and self.label_column in getattr(ds, "df").columns:
+                    y_iterable = getattr(ds, "df")[self.label_column].values
+                elif hasattr(ds, "labels"):
+                    y_iterable = getattr(ds, "labels")
+                break
+
+        # Fallback: iterate one epoch of the train dataloader just to count
+        if y_iterable is None and hasattr(dm, "train_dataloader"):
+            try:
+                for batch in dm.train_dataloader():
+                    y_b = batch["y"]
+                    # assume y is 0/1 (float or long); move to cpu for counting
+                    y_b = (y_b.detach().cpu().numpy().reshape(-1) > 0.5).astype(int)
+                    pos += int(y_b.sum())
+                    neg += int((1 - y_b).sum())
+            except Exception:
+                pass
+
+        # If we found a direct iterable of labels, count from it
+        if y_iterable is not None:
+            import numpy as np
+            y_arr = np.asarray(y_iterable).astype(float).reshape(-1)
+            # treat >=0.5 as positive
+            y_bin = (y_arr >= 0.5).astype(int)
+            pos = int(y_bin.sum())
+            neg = int((len(y_bin) - y_bin.sum()))
+
+        # Safety: avoid division by zero
+        if pos == 0:
+            # All negative -> give small positive weight
+            ratio = 1.0
+        elif neg == 0:
+            # All positive -> heavy weight so they still contribute in practice
+            ratio = 1.0
+        else:
+            ratio = neg / pos
+
+        # Store as tensor on correct device later in forward/loss
+        self.pos_weight = torch.tensor([ratio], dtype=torch.float32)
+        self.log("train_pos_weight", self.pos_weight.item(), prog_bar=True)
+
+    
     def add_cls_token(self, x):
         if x.shape[0] > 1:
             cls_tokens = repeat(self.cls_token, "1 1 d -> b 1 d", b=x.shape[0])
@@ -77,9 +138,14 @@ class TileTransformer(pl.LightningModule):
         self.log_all(loss, y_hat, batch['y'], "train")
         return loss
     
-    @staticmethod
+    # <-- not static anymore
     def calculate_loss(y_hat, y):
-        return nn.functional.binary_cross_entropy_with_logits(y_hat, y, reduction="mean")
+        # Ensure tensors are float and on same device
+        y = y.to(y_hat.device, dtype=torch.float32)
+        pos_w = self.pos_weight.to(y_hat.device) if self.pos_weight is not None else None
+        return nn.functional.binary_cross_entropy_with_logits(
+            y_hat, y, reduction="mean", pos_weight=pos_w
+        )
 
     def validation_step(self, batch, batch_idx):
         y_hat = self.forward(batch['x'])['y_hat']
