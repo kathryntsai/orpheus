@@ -3,6 +3,8 @@ model:
     init_args:
         preds_output_dir: "preds/visual"
         input_dim: 1536
+        task: regression
+        label_column: score   # unused for regression
 data:
     class_path: vision.dataset.EmbeddingDataModule
     init_args:
@@ -10,6 +12,7 @@ data:
         
         num_workers: 2
         batch_size: 1
+        task: regression
 trainer:
     accelerator: gpu
     devices: 1
