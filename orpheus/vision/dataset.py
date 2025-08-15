@@ -152,7 +152,7 @@ class EmbeddingDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
-            shuffle=False,  # flip to True if you want shuffle for training
+            shuffle=False,  # flip to True to shuffle during training but this keeps everytihng standard for now
             sampler=None,
             batch_sampler=None,
         )
