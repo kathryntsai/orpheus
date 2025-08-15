@@ -101,36 +101,50 @@ class EmbeddingDataModule(pl.LightningDataModule):
         dataframe_path: str,
         num_workers: int = 0,
         batch_size: int = 1,
+        task: str = "regression",   # "regression" | "binary" | "survival"
     ):
         super().__init__()
+        assert task in {"regression", "binary", "survival"}, "Invalid data.task"
         self.dataframe_path = dataframe_path
         self.num_workers = num_workers
         self.batch_size = batch_size
+        self.task = task
         self.save_hyperparameters()
 
         self.df = pd.read_csv(dataframe_path, low_memory=False)
         self.df = self.df[self.df["input_visual_embedding_path"] != "NONE"]
         validate_dataframe(self.df)
 
+        # Placeholders populated in setup()
+        self.train_ds = None
+        self.val_ds = None
+        self.test_ds = None
+        self.predict_ds = None
+
+    def _make_dataset(self, df_split: pd.DataFrame):
+        if self.task == "regression":
+            return EmbeddingDataset(df_split)
+        elif self.task == "binary":
+            return EmbeddingDatasetLogisticRegression(df_split)
+        else:
+            return EmbeddingDatasetCoxRegression(df_split)
+
     def setup(self, stage: str) -> None:
         if stage == "fit":
             assert "train" in self.df["split"].unique(), "No train split in dataframe"
-            assert "val" in self.df["split"].unique(), "No val split in dataframe"
-            self.train_ds = EmbeddingDataset(
-                self.df.loc[self.df["split"] == "train"]
-            )
-            self.val_ds = EmbeddingDataset(
-                self.df.loc[self.df["split"] == "val"]
-            )
+            assert "val"   in self.df["split"].unique(), "No val split in dataframe"
+            self.train_ds = self._make_dataset(self.df.loc[self.df["split"] == "train"])
+            self.val_ds   = self._make_dataset(self.df.loc[self.df["split"] == "val"])
+
         elif stage == "test":
             assert "test" in self.df["split"].unique(), "No test split in dataframe"
-            self.test_ds = EmbeddingDataset(
-                self.df.loc[self.df["split"] == "test"]
-            )
+            self.test_ds = self._make_dataset(self.df.loc[self.df["split"] == "test"])
+
         elif stage == "predict":
-            self.predict_ds = EmbeddingDataset(self.df)
+            self.predict_ds = self._make_dataset(self.df)
+
         else:
-            raise NotImplementedError("Unknown stage {}".format(stage))
+            raise NotImplementedError(f"Unknown stage {stage}")
 
     def train_dataloader(self):
         return DataLoader(
@@ -138,11 +152,11 @@ class EmbeddingDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
-            shuffle=False,
+            shuffle=False,  # flip to True if you want shuffle for training
             sampler=None,
             batch_sampler=None,
         )
-
+        
     def val_dataloader(self):
         return DataLoader(
             self.val_ds,
@@ -153,7 +167,7 @@ class EmbeddingDataModule(pl.LightningDataModule):
             sampler=None,
             batch_sampler=None,
         )
-
+        
     def test_dataloader(self):
         return DataLoader(
             self.test_ds,
@@ -169,7 +183,7 @@ class EmbeddingDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
         )
-
+    
 
 if __name__ == "__main__":
     pass
